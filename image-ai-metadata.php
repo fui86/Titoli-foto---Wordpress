@@ -474,8 +474,16 @@ class Image_AI_Metadata {
      * Call AI API to analyze image
      */
     private function call_ai_api($image_path, $api_token) {
+        // Clear cache to ensure we get the latest value
+        wp_cache_delete('image_ai_metadata_api_endpoint', 'options');
+        
         // Get endpoint - use working default if not set
         $endpoint = get_option('image_ai_metadata_api_endpoint', 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base');
+        
+        // Log the endpoint being used for debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[Image AI Metadata] Using endpoint: ' . $endpoint);
+        }
         
         // Read image file
         $image_data = file_get_contents($image_path);
@@ -510,7 +518,10 @@ class Image_AI_Metadata {
             
             switch ($response_code) {
                 case 410:
-                    $error_message = __('Il modello selezionato non è più disponibile (HTTP 410 - Gone). Prova con un modello alternativo come "Salesforce/blip-image-captioning-base" nelle impostazioni del plugin.', 'image-ai-metadata');
+                    $error_message = sprintf(
+                        __('Il modello non è più disponibile (HTTP 410 - Gone). Endpoint usato: %s. Prova con un modello alternativo come "Salesforce/blip-image-captioning-base" nelle impostazioni del plugin.', 'image-ai-metadata'),
+                        $endpoint
+                    );
                     break;
                 case 403:
                     $error_message = __('Token API non valido o permessi insufficienti (HTTP 403). Verifica il token nelle impostazioni.', 'image-ai-metadata');
