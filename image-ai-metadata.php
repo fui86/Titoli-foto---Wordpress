@@ -935,6 +935,10 @@ class Image_AI_Metadata {
     private function get_bulk_page_js() {
         return "
             jQuery(document).ready(function($) {
+                console.log('Image AI Bulk Processing: Script loaded');
+                console.log('AJAX URL:', imageAIBulk.ajaxurl);
+                console.log('Nonce:', imageAIBulk.nonce);
+                
                 var imagesToProcess = [];
                 var currentIndex = 0;
                 var successCount = 0;
@@ -948,29 +952,47 @@ class Image_AI_Metadata {
                         .html('<span class=\"log-timestamp\">[' + timestamp + ']</span>' + message);
                     $('#debug-output').append(logEntry);
                     $('#debug-output').scrollTop($('#debug-output')[0].scrollHeight);
+                    console.log('[' + type.toUpperCase() + '] ' + message);
                 }
+                
+                // Add initial log message
+                addLog('Sistema di debug inizializzato. Pronto per elaborare le immagini.', 'info');
                 
                 $('#btn-scan-images').on('click', function() {
                     var filterType = $('input[name=\"filter_type\"]:checked').val();
                     $(this).prop('disabled', true).html('<span class=\"dashicons dashicons-update spin\"></span> Scansione...');
                     
                     addLog('Inizio scansione immagini (filtro: ' + filterType + ')...', 'info');
+                    addLog('Chiamata AJAX a: ' + imageAIBulk.ajaxurl, 'info');
                     
-                    $.post(imageAIBulk.ajaxurl, {
-                        action: 'image_ai_get_images',
-                        nonce: imageAIBulk.nonce,
-                        filter_type: filterType
-                    }, function(response) {
-                        if (response.success) {
-                            imagesToProcess = response.data.images;
-                            $('#images-count').text(response.data.count);
-                            $('#images-found').fadeIn();
-                            $('#count-total').text(response.data.count);
-                            addLog('Trovate ' + response.data.count + ' immagini da elaborare.', 'success');
-                        } else {
-                            addLog('Errore durante la scansione: ' + response.data.message, 'error');
+                    $.ajax({
+                        url: imageAIBulk.ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'image_ai_get_images',
+                            nonce: imageAIBulk.nonce,
+                            filter_type: filterType
+                        },
+                        success: function(response) {
+                            addLog('Risposta ricevuta dal server', 'info');
+                            if (response.success) {
+                                imagesToProcess = response.data.images;
+                                $('#images-count').text(response.data.count);
+                                $('#images-found').fadeIn();
+                                $('#count-total').text(response.data.count);
+                                addLog('Trovate ' + response.data.count + ' immagini da elaborare.', 'success');
+                            } else {
+                                addLog('Errore: ' + (response.data.message || 'Errore sconosciuto'), 'error');
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            addLog('ERRORE AJAX: ' + status + ' - ' + error, 'error');
+                            addLog('Status Code: ' + xhr.status, 'error');
+                            addLog('Response Text: ' + xhr.responseText.substring(0, 200), 'error');
+                        },
+                        complete: function() {
+                            $('#btn-scan-images').prop('disabled', false).html('<span class=\"dashicons dashicons-search\"></span> Scansiona Immagini');
                         }
-                        $('#btn-scan-images').prop('disabled', false).html('<span class=\"dashicons dashicons-search\"></span> Scansiona Immagini');
                     });
                 });
                 
