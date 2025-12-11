@@ -170,17 +170,35 @@ class Image_AI_Metadata {
      * Render API endpoint field
      */
     public function render_api_endpoint_field() {
-        $value = get_option('image_ai_metadata_api_endpoint', 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large');
-        echo '<input type="text" name="image_ai_metadata_api_endpoint" value="' . esc_attr($value) . '" size="80" />';
-        echo '<p class="description">' . __('Endpoint API per il modello di riconoscimento immagini (predefinito: BLIP Image Captioning).', 'image-ai-metadata') . '</p>';
+        // Check what's actually in the database (no default fallback)
+        $db_value = get_option('image_ai_metadata_api_endpoint', false);
+        
+        // If nothing is stored, use the new working default
+        if ($db_value === false || empty($db_value)) {
+            $value = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
+            // Save it to database immediately
+            update_option('image_ai_metadata_api_endpoint', $value);
+        } else {
+            $value = $db_value;
+        }
+        
+        echo '<input type="text" name="image_ai_metadata_api_endpoint" value="' . esc_attr($value) . '" size="80" style="font-family: monospace;" />';
+        echo '<p class="description">' . __('Endpoint API per il modello di riconoscimento immagini (predefinito: BLIP Base).', 'image-ai-metadata') . '</p>';
+        
+        // Show what's actually stored in the database for debugging
+        echo '<div style="margin-top: 10px; padding: 8px; background: #e7f3ff; border-left: 4px solid #0073aa; border-radius: 3px; font-size: 12px;">';
+        echo '<strong>🔍 Valore attualmente salvato nel database:</strong><br>';
+        echo '<code style="background: #fff; padding: 2px 6px; border-radius: 2px; display: inline-block; margin-top: 5px;">' . esc_html($value) . '</code>';
+        echo '</div>';
+        
         echo '<div style="margin-top: 10px; padding: 10px; background: #f0f0f1; border-left: 4px solid #2271b1; border-radius: 4px;">';
-        echo '<strong>' . __('⚠️ Modelli Consigliati (se il predefinito non funziona):', 'image-ai-metadata') . '</strong><br>';
+        echo '<strong>' . __('✅ Modelli Consigliati e Funzionanti:', 'image-ai-metadata') . '</strong><br>';
         echo '<ul style="margin: 10px 0 0 20px;">';
-        echo '<li><code>https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base</code> - BLIP Base (più veloce)</li>';
+        echo '<li><strong><code>https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base</code></strong> - <strong>BLIP Base (CONSIGLIATO)</strong></li>';
         echo '<li><code>https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning</code> - ViT-GPT2 (alternativa stabile)</li>';
         echo '<li><code>https://api-inference.huggingface.co/models/microsoft/git-base</code> - GIT Base (Microsoft)</li>';
         echo '</ul>';
-        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #646970;">' . __('💡 Se vedi errore HTTP 410, significa che il modello non è più disponibile. Copia e incolla uno degli endpoint sopra.', 'image-ai-metadata') . '</p>';
+        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #646970;">' . __('💡 Se vedi errore HTTP 410, significa che il modello non è più disponibile. Copia e incolla uno degli endpoint sopra e clicca "Salva modifiche".', 'image-ai-metadata') . '</p>';
         echo '</div>';
     }
     
@@ -456,7 +474,8 @@ class Image_AI_Metadata {
      * Call AI API to analyze image
      */
     private function call_ai_api($image_path, $api_token) {
-        $endpoint = get_option('image_ai_metadata_api_endpoint', 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large');
+        // Get endpoint - use working default if not set
+        $endpoint = get_option('image_ai_metadata_api_endpoint', 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base');
         
         // Read image file
         $image_data = file_get_contents($image_path);
