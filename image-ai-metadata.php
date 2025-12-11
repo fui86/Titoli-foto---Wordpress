@@ -480,19 +480,31 @@ class Image_AI_Metadata {
         // Get endpoint - use working default if not set
         $endpoint = get_option('image_ai_metadata_api_endpoint', 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base');
         
-        // Log the endpoint being used for debugging
+        // Enhanced logging for debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('[Image AI Metadata] Using endpoint: ' . $endpoint);
+            error_log('[Image AI Metadata] === API CALL START ===');
+            error_log('[Image AI Metadata] Endpoint from DB: ' . $endpoint);
+            error_log('[Image AI Metadata] Image path: ' . $image_path);
+            error_log('[Image AI Metadata] Token configured: ' . (empty($api_token) ? 'NO' : 'YES (length: ' . strlen($api_token) . ')'));
         }
         
         // Read image file
         $image_data = file_get_contents($image_path);
         
         if ($image_data === false) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Image AI Metadata] ERROR: Failed to read image file');
+            }
             return new WP_Error('read_error', __('Errore nella lettura del file immagine.', 'image-ai-metadata'));
         }
         
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[Image AI Metadata] Image data read successfully (' . strlen($image_data) . ' bytes)');
+            error_log('[Image AI Metadata] Sending POST request to: ' . $endpoint);
+        }
+        
         // Prepare API request
+        $start_time = microtime(true);
         $response = wp_remote_post($endpoint, array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $api_token,
@@ -501,8 +513,12 @@ class Image_AI_Metadata {
             'body' => $image_data,
             'timeout' => 30
         ));
+        $elapsed_time = round((microtime(true) - $start_time) * 1000);
         
         if (is_wp_error($response)) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Image AI Metadata] ERROR: wp_remote_post failed - ' . $response->get_error_message());
+            }
             return new WP_Error('api_error', sprintf(
                 __('Errore nella chiamata API: %s', 'image-ai-metadata'),
                 $response->get_error_message()
@@ -511,6 +527,12 @@ class Image_AI_Metadata {
         
         $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[Image AI Metadata] Response received in ' . $elapsed_time . 'ms');
+            error_log('[Image AI Metadata] HTTP Status Code: ' . $response_code);
+            error_log('[Image AI Metadata] Response body length: ' . strlen($body) . ' bytes');
+        }
         
         if ($response_code !== 200) {
             // Get specific error message based on status code
@@ -554,18 +576,47 @@ class Image_AI_Metadata {
                     break;
             }
             
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Image AI Metadata] ERROR: Non-200 status code - ' . $error_message);
+                error_log('[Image AI Metadata] Response preview: ' . substr($body, 0, 300));
+            }
+            
             return new WP_Error('api_error', $error_message);
+        }
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[Image AI Metadata] Success! HTTP 200 received');
+            error_log('[Image AI Metadata] Parsing JSON response...');
         }
         
         $data = json_decode($body, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Image AI Metadata] ERROR: JSON decode failed - ' . json_last_error_msg());
+                error_log('[Image AI Metadata] Raw response: ' . substr($body, 0, 500));
+            }
             return new WP_Error('json_error', __('Errore nella decodifica della risposta JSON.', 'image-ai-metadata'));
+        }
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[Image AI Metadata] JSON parsed successfully');
+            error_log('[Image AI Metadata] Response structure: ' . print_r($data, true));
         }
         
         // Extract description from response
         if (isset($data[0]['generated_text'])) {
-            return sanitize_text_field($data[0]['generated_text']);
+            $description = sanitize_text_field($data[0]['generated_text']);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Image AI Metadata] Generated text extracted: ' . $description);
+                error_log('[Image AI Metadata] === API CALL END (SUCCESS) ===');
+            }
+            return $description;
+        }
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[Image AI Metadata] ERROR: Response structure invalid - no generated_text field found');
+            error_log('[Image AI Metadata] === API CALL END (FAILED) ===');
         }
         
         return new WP_Error('invalid_response', __('Risposta API non valida.', 'image-ai-metadata'));
