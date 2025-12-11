@@ -474,11 +474,25 @@ class Image_AI_Metadata {
      * Call AI API to analyze image
      */
     private function call_ai_api($image_path, $api_token) {
-        // Clear cache to ensure we get the latest value
+        // CRITICAL: Force fresh read from database - clear ALL caches
         wp_cache_delete('image_ai_metadata_api_endpoint', 'options');
+        wp_cache_delete('alloptions', 'options');
         
-        // Get endpoint - use working default if not set
-        $endpoint = get_option('image_ai_metadata_api_endpoint', 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base');
+        // Force WordPress to reload options from database
+        global $wpdb;
+        $endpoint_value = $wpdb->get_var($wpdb->prepare(
+            "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
+            'image_ai_metadata_api_endpoint'
+        ));
+        
+        // Use the working default if nothing is stored or value is empty
+        if (empty($endpoint_value)) {
+            $endpoint_value = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
+            // Save it for future use
+            update_option('image_ai_metadata_api_endpoint', $endpoint_value);
+        }
+        
+        $endpoint = $endpoint_value;
         
         // Enhanced logging for debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
