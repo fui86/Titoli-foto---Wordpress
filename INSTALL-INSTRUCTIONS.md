@@ -1,5 +1,13 @@
 # Istruzioni di Installazione / Installation Instructions
 
+## 🔽 DOWNLOAD
+
+### **[⬇️ Scarica image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)**
+
+**Link diretto**: https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip
+
+---
+
 ## 🇮🇹 ITALIANO
 
 ### File Completo Pronto per WordPress
@@ -25,7 +33,7 @@ image-ai-metadata/
 
 ### Installazione - Metodo 1: Caricamento ZIP (CONSIGLIATO)
 
-1. **Scarica il file**: `image-ai-metadata.zip` (31 KB)
+1. **Scarica il file**: [⬇️ image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)
 
 2. **Accedi a WordPress**:
    - Vai sul tuo sito WordPress
@@ -149,6 +157,8 @@ chown -R www-data:www-data image-ai-metadata/
 
 ## 🇬🇧 ENGLISH
 
+### **[⬇️ Download image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)**
+
 ### Complete WordPress-Ready File
 
 The **`image-ai-metadata.zip`** file contains everything needed to install the plugin on WordPress.
@@ -172,7 +182,7 @@ image-ai-metadata/
 
 ### Installation - Method 1: ZIP Upload (RECOMMENDED)
 
-1. **Download the file**: `image-ai-metadata.zip` (31 KB)
+1. **Download the file**: [⬇️ image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)
 
 2. **Log in to WordPress**:
    - Go to your WordPress site

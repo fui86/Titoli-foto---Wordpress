@@ -4,12 +4,20 @@ Get started with Image AI Metadata in 5 minutes! / Inizia con Image AI Metadata 
 
 ---
 
+## 🔽 DOWNLOAD / SCARICA
+
+### **[⬇️ Scarica image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)**
+
+### **[⬇️ Download image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)**
+
+---
+
 ## 🇮🇹 Guida Rapida in Italiano
 
 ### 1️⃣ Installa il Plugin (2 minuti)
 
 **Opzione A - Caricamento ZIP:**
-1. Scarica il repository come ZIP
+1. [⬇️ Scarica image-ai-metadata.zip](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)
 2. In WordPress, vai su **Plugin → Aggiungi nuovo → Carica plugin**
 3. Seleziona il file ZIP
 4. Clicca **Installa ora** → **Attiva**
@@ -68,7 +76,7 @@ Il plugin ora elaborerà automaticamente tutte le nuove immagini che carichi!
 ### 1️⃣ Install the Plugin (2 minutes)
 
 **Option A - ZIP Upload:**
-1. Download the repository as ZIP
+1. [⬇️ Download image-ai-metadata.zip](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)
 2. In WordPress, go to **Plugins → Add New → Upload Plugin**
 3. Select the ZIP file
 4. Click **Install Now** → **Activate**

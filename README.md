@@ -4,6 +4,18 @@ Un plugin WordPress che utilizza l'intelligenza artificiale per riconoscere auto
 
 A WordPress plugin that uses artificial intelligence to automatically recognize image content and populate metadata fields (Alternative Text, Title, Caption, Description).
 
+---
+
+## 📦 Download
+
+**[⬇️ Scarica image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)**
+
+**[⬇️ Download image-ai-metadata.zip (31 KB)](https://github.com/fui86/Titoli-foto---Wordpress/raw/copilot/add-wordpress-image-ai-plugin/image-ai-metadata.zip)**
+
+Plugin completo pronto per l'installazione su WordPress | Complete plugin ready for WordPress installation
+
+---
+
 ## 🇮🇹 Italiano
 
 ### Caratteristiche
