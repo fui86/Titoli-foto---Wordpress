@@ -60,7 +60,7 @@ class Image_AI_Metadata {
         add_action('admin_init', array($this, 'register_settings'));
         
         // Process images on upload
-        add_filter('add_attachment', array($this, 'process_new_image'), 10, 1);
+        add_action('add_attachment', array($this, 'process_new_image'), 10, 1);
         
         // Add meta box to media edit page
         add_action('add_meta_boxes_attachment', array($this, 'add_meta_box'));
@@ -258,8 +258,6 @@ class Image_AI_Metadata {
      * Render meta box
      */
     public function render_meta_box($post) {
-        wp_nonce_field('image_ai_metadata_process', 'image_ai_metadata_nonce');
-        
         $last_processed = get_post_meta($post->ID, '_image_ai_metadata_processed', true);
         
         if ($last_processed) {
@@ -275,9 +273,9 @@ class Image_AI_Metadata {
         echo '</button>';
         echo '</p>';
         
-        echo '<form id="image-ai-metadata-form" method="post" action="' . admin_url('admin-post.php') . '" style="display:none;">';
+        echo '<form id="image-ai-metadata-form" method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:none;">';
         echo '<input type="hidden" name="action" value="image_ai_metadata_process" />';
-        echo '<input type="hidden" name="attachment_id" value="' . $post->ID . '" />';
+        echo '<input type="hidden" name="attachment_id" value="' . absint($post->ID) . '" />';
         wp_nonce_field('image_ai_metadata_process', 'image_ai_metadata_nonce');
         echo '</form>';
         
