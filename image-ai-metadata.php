@@ -173,6 +173,15 @@ class Image_AI_Metadata {
         $value = get_option('image_ai_metadata_api_endpoint', 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large');
         echo '<input type="text" name="image_ai_metadata_api_endpoint" value="' . esc_attr($value) . '" size="80" />';
         echo '<p class="description">' . __('Endpoint API per il modello di riconoscimento immagini (predefinito: BLIP Image Captioning).', 'image-ai-metadata') . '</p>';
+        echo '<div style="margin-top: 10px; padding: 10px; background: #f0f0f1; border-left: 4px solid #2271b1; border-radius: 4px;">';
+        echo '<strong>' . __('⚠️ Modelli Consigliati (se il predefinito non funziona):', 'image-ai-metadata') . '</strong><br>';
+        echo '<ul style="margin: 10px 0 0 20px;">';
+        echo '<li><code>https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base</code> - BLIP Base (più veloce)</li>';
+        echo '<li><code>https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning</code> - ViT-GPT2 (alternativa stabile)</li>';
+        echo '<li><code>https://api-inference.huggingface.co/models/microsoft/git-base</code> - GIT Base (Microsoft)</li>';
+        echo '</ul>';
+        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #646970;">' . __('💡 Se vedi errore HTTP 410, significa che il modello non è più disponibile. Copia e incolla uno degli endpoint sopra.', 'image-ai-metadata') . '</p>';
+        echo '</div>';
     }
     
     /**
@@ -477,11 +486,45 @@ class Image_AI_Metadata {
         $body = wp_remote_retrieve_body($response);
         
         if ($response_code !== 200) {
-            return new WP_Error('api_error', sprintf(
-                __('Errore API (codice %d): %s', 'image-ai-metadata'),
-                $response_code,
-                $body
-            ));
+            // Get specific error message based on status code
+            $error_message = '';
+            
+            switch ($response_code) {
+                case 410:
+                    $error_message = __('Il modello selezionato non è più disponibile (HTTP 410 - Gone). Prova con un modello alternativo come "Salesforce/blip-image-captioning-base" nelle impostazioni del plugin.', 'image-ai-metadata');
+                    break;
+                case 403:
+                    $error_message = __('Token API non valido o permessi insufficienti (HTTP 403). Verifica il token nelle impostazioni.', 'image-ai-metadata');
+                    break;
+                case 401:
+                    $error_message = __('Non autenticato (HTTP 401). Verifica che il token API sia corretto.', 'image-ai-metadata');
+                    break;
+                case 404:
+                    $error_message = __('Modello non trovato (HTTP 404). Verifica l\'endpoint API nelle impostazioni.', 'image-ai-metadata');
+                    break;
+                case 429:
+                    $error_message = __('Troppo richieste (HTTP 429). Hai raggiunto il limite API. Attendi qualche minuto e riprova.', 'image-ai-metadata');
+                    break;
+                case 500:
+                case 502:
+                case 503:
+                    $error_message = __('Errore server Hugging Face (HTTP ' . $response_code . '). Il servizio potrebbe essere temporaneamente non disponibile. Riprova tra qualche minuto.', 'image-ai-metadata');
+                    break;
+                default:
+                    // Try to extract JSON error message
+                    $json_data = json_decode($body, true);
+                    if (isset($json_data['error'])) {
+                        $error_message = sprintf(__('Errore API (HTTP %d): %s', 'image-ai-metadata'), $response_code, sanitize_text_field($json_data['error']));
+                    } else {
+                        // Strip HTML tags and limit length for other errors
+                        $clean_body = wp_strip_all_tags($body);
+                        $clean_body = substr($clean_body, 0, 200);
+                        $error_message = sprintf(__('Errore API (HTTP %d): %s', 'image-ai-metadata'), $response_code, $clean_body);
+                    }
+                    break;
+            }
+            
+            return new WP_Error('api_error', $error_message);
         }
         
         $data = json_decode($body, true);
