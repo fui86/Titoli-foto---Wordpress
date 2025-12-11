@@ -216,6 +216,76 @@ class Image_AI_Metadata {
                 <li><strong>BLIP Image Captioning</strong> (predefinito) - Generazione di descrizioni dettagliate</li>
                 <li><strong>ViT GPT2 Image Captioning</strong> - Alternativa per descrizioni più creative</li>
             </ul>
+            
+            <hr>
+            
+            <h2><?php _e('Diagnostica', 'image-ai-metadata'); ?></h2>
+            <div style="background: #f0f0f1; padding: 15px; border-left: 4px solid #72aee6;">
+                <h3><?php _e('Stato Configurazione', 'image-ai-metadata'); ?></h3>
+                <ul>
+                    <li>
+                        <strong><?php _e('Token API:', 'image-ai-metadata'); ?></strong>
+                        <?php 
+                        $token = get_option('image_ai_metadata_api_token');
+                        if (!empty($token)) {
+                            echo ' <span style="color: green;">✓ ' . __('Configurato', 'image-ai-metadata') . '</span>';
+                            echo ' (' . substr($token, 0, 7) . '...)';
+                        } else {
+                            echo ' <span style="color: red;">✗ ' . __('Non configurato', 'image-ai-metadata') . '</span>';
+                        }
+                        ?>
+                    </li>
+                    <li>
+                        <strong><?php _e('Elaborazione automatica:', 'image-ai-metadata'); ?></strong>
+                        <?php 
+                        $auto = get_option('image_ai_metadata_auto_process', '1');
+                        if ($auto === '1') {
+                            echo ' <span style="color: green;">✓ ' . __('Abilitata', 'image-ai-metadata') . '</span>';
+                        } else {
+                            echo ' <span style="color: orange;">⚠ ' . __('Disabilitata', 'image-ai-metadata') . '</span>';
+                        }
+                        ?>
+                    </li>
+                    <li>
+                        <strong>PHP Version:</strong> <?php echo PHP_VERSION; ?>
+                        <?php if (version_compare(PHP_VERSION, '7.0.0', '>=')) {
+                            echo ' <span style="color: green;">✓</span>';
+                        } else {
+                            echo ' <span style="color: red;">✗ (minimo 7.0)</span>';
+                        } ?>
+                    </li>
+                    <li>
+                        <strong>cURL:</strong>
+                        <?php if (function_exists('curl_init')) {
+                            echo ' <span style="color: green;">✓ ' . __('Disponibile', 'image-ai-metadata') . '</span>';
+                        } else {
+                            echo ' <span style="color: red;">✗ ' . __('Non disponibile', 'image-ai-metadata') . '</span>';
+                        } ?>
+                    </li>
+                    <li>
+                        <strong>allow_url_fopen:</strong>
+                        <?php if (ini_get('allow_url_fopen')) {
+                            echo ' <span style="color: green;">✓ ' . __('Abilitato', 'image-ai-metadata') . '</span>';
+                        } else {
+                            echo ' <span style="color: orange;">⚠ ' . __('Disabilitato', 'image-ai-metadata') . '</span>';
+                        } ?>
+                    </li>
+                </ul>
+                
+                <h3><?php _e('Problemi comuni', 'image-ai-metadata'); ?></h3>
+                <ul>
+                    <li>✓ <strong><?php _e('Token non valido:', 'image-ai-metadata'); ?></strong> <?php _e('Verifica su Hugging Face che il token sia attivo', 'image-ai-metadata'); ?></li>
+                    <li>✓ <strong><?php _e('Modello in caricamento:', 'image-ai-metadata'); ?></strong> <?php _e('Attendi 20-30 secondi e riprova', 'image-ai-metadata'); ?></li>
+                    <li>✓ <strong><?php _e('Nessun metadata:', 'image-ai-metadata'); ?></strong> <?php _e('Verifica che l\'elaborazione automatica sia abilitata', 'image-ai-metadata'); ?></li>
+                </ul>
+                
+                <p>
+                    <strong><?php _e('Guida completa:', 'image-ai-metadata'); ?></strong>
+                    <a href="https://github.com/fui86/Titoli-foto---Wordpress/blob/copilot/add-wordpress-image-ai-plugin/TROUBLESHOOTING.md" target="_blank">
+                        <?php _e('Leggi la guida alla risoluzione dei problemi', 'image-ai-metadata'); ?> →
+                    </a>
+                </p>
+            </div>
         </div>
         <?php
     }
@@ -235,7 +305,12 @@ class Image_AI_Metadata {
         }
         
         // Process the image
-        $this->analyze_and_update_image($attachment_id);
+        $result = $this->analyze_and_update_image($attachment_id);
+        
+        // Log errors if debug is enabled
+        if (is_wp_error($result) && defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('Image AI Metadata Error (ID: ' . $attachment_id . '): ' . $result->get_error_message());
+        }
     }
     
     /**
