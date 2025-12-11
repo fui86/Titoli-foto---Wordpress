@@ -112,7 +112,8 @@ class Image_AI_Metadata {
     public function register_settings() {
         register_setting('image_ai_metadata_options', 'image_ai_metadata_api_token');
         register_setting('image_ai_metadata_options', 'image_ai_metadata_auto_process');
-        register_setting('image_ai_metadata_options', 'image_ai_metadata_api_endpoint');
+        register_setting('image_ai_metadata_options', 'image_ai_metadata_api_endpoint', array($this, 'sanitize_endpoint'));
+        register_setting('image_ai_metadata_options', 'image_ai_metadata_api_endpoint_custom');
         
         add_settings_section(
             'image_ai_metadata_main',
@@ -147,6 +148,22 @@ class Image_AI_Metadata {
     }
     
     /**
+     * Sanitize endpoint setting
+     */
+    public function sanitize_endpoint($value) {
+        // If custom endpoint is provided, use that
+        if (isset($_POST['image_ai_metadata_api_endpoint_custom']) && !empty($_POST['image_ai_metadata_api_endpoint_custom'])) {
+            $value = sanitize_text_field($_POST['image_ai_metadata_api_endpoint_custom']);
+        }
+        
+        // Clear all caches after saving
+        wp_cache_delete('image_ai_metadata_api_endpoint', 'options');
+        wp_cache_delete('alloptions', 'options');
+        
+        return $value;
+    }
+    
+    /**
      * Render settings section
      */
     public function render_settings_section() {
@@ -170,11 +187,18 @@ class Image_AI_Metadata {
      * Render API endpoint field
      */
     public function render_api_endpoint_field() {
-        // Check what's actually in the database (no default fallback)
-        $db_value = get_option('image_ai_metadata_api_endpoint', false);
+        // CRITICAL: Use direct database query to bypass all caches
+        wp_cache_delete('image_ai_metadata_api_endpoint', 'options');
+        wp_cache_delete('alloptions', 'options');
+        
+        global $wpdb;
+        $db_value = $wpdb->get_var($wpdb->prepare(
+            "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
+            'image_ai_metadata_api_endpoint'
+        ));
         
         // If nothing is stored, use the new working default
-        if ($db_value === false || empty($db_value)) {
+        if (empty($db_value)) {
             $value = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
             // Save it to database immediately
             update_option('image_ai_metadata_api_endpoint', $value);
@@ -182,8 +206,42 @@ class Image_AI_Metadata {
             $value = $db_value;
         }
         
-        echo '<input type="text" name="image_ai_metadata_api_endpoint" value="' . esc_attr($value) . '" size="80" style="font-family: monospace;" />';
-        echo '<p class="description">' . __('Endpoint API per il modello di riconoscimento immagini (predefinito: BLIP Base).', 'image-ai-metadata') . '</p>';
+        // Available models
+        $models = array(
+            'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base' => 'BLIP Base (Salesforce) - CONSIGLIATO',
+            'https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning' => 'ViT-GPT2 (nlpconnect) - Molto stabile',
+            'https://api-inference.huggingface.co/models/microsoft/git-base' => 'GIT Base (Microsoft) - Veloce'
+        );
+        
+        echo '<div style="margin-bottom: 15px;">';
+        echo '<select name="image_ai_metadata_api_endpoint" id="image_ai_metadata_api_endpoint_select" style="width: 100%; max-width: 600px; padding: 6px; font-size: 14px;">';
+        foreach ($models as $endpoint => $label) {
+            $selected = ($value === $endpoint) ? ' selected="selected"' : '';
+            echo '<option value="' . esc_attr($endpoint) . '"' . $selected . '>' . esc_html($label) . '</option>';
+        }
+        echo '<option value="custom">🔧 URL Personalizzato...</option>';
+        echo '</select>';
+        echo '</div>';
+        
+        echo '<div id="custom_endpoint_field" style="' . (in_array($value, array_keys($models)) ? 'display: none;' : '') . ' margin-bottom: 15px;">';
+        echo '<input type="text" name="image_ai_metadata_api_endpoint_custom" id="image_ai_metadata_api_endpoint_custom" value="' . esc_attr($value) . '" size="80" style="font-family: monospace; width: 100%; max-width: 600px;" />';
+        echo '<p class="description">' . __('Inserisci un URL endpoint personalizzato.', 'image-ai-metadata') . '</p>';
+        echo '</div>';
+        
+        echo '<script>
+        document.getElementById("image_ai_metadata_api_endpoint_select").addEventListener("change", function() {
+            var customField = document.getElementById("custom_endpoint_field");
+            var customInput = document.getElementById("image_ai_metadata_api_endpoint_custom");
+            if (this.value === "custom") {
+                customField.style.display = "block";
+            } else {
+                customField.style.display = "none";
+                customInput.value = this.value;
+            }
+        });
+        </script>';
+        
+        echo '<p class="description">' . __('Seleziona il modello AI da utilizzare per il riconoscimento immagini. Tutti i modelli elencati sono gratuiti.', 'image-ai-metadata') . '</p>';
         
         // Show what's actually stored in the database for debugging
         echo '<div style="margin-top: 10px; padding: 8px; background: #e7f3ff; border-left: 4px solid #0073aa; border-radius: 3px; font-size: 12px;">';
@@ -191,14 +249,9 @@ class Image_AI_Metadata {
         echo '<code style="background: #fff; padding: 2px 6px; border-radius: 2px; display: inline-block; margin-top: 5px;">' . esc_html($value) . '</code>';
         echo '</div>';
         
-        echo '<div style="margin-top: 10px; padding: 10px; background: #f0f0f1; border-left: 4px solid #2271b1; border-radius: 4px;">';
-        echo '<strong>' . __('✅ Modelli Consigliati e Funzionanti:', 'image-ai-metadata') . '</strong><br>';
-        echo '<ul style="margin: 10px 0 0 20px;">';
-        echo '<li><strong><code>https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base</code></strong> - <strong>BLIP Base (CONSIGLIATO)</strong></li>';
-        echo '<li><code>https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning</code> - ViT-GPT2 (alternativa stabile)</li>';
-        echo '<li><code>https://api-inference.huggingface.co/models/microsoft/git-base</code> - GIT Base (Microsoft)</li>';
-        echo '</ul>';
-        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #646970;">' . __('💡 Se vedi errore HTTP 410, significa che il modello non è più disponibile. Copia e incolla uno degli endpoint sopra e clicca "Salva modifiche".', 'image-ai-metadata') . '</p>';
+        echo '<div style="margin-top: 10px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">';
+        echo '<strong>⚠️ Nota Importante:</strong><br>';
+        echo '<p style="margin: 5px 0 0 0; font-size: 13px;">Se continui a vedere errori HTTP 410, significa che il modello precedente è ancora in cache. <strong>Dopo aver cambiato il modello, clicca "Salva modifiche"</strong> e poi vai su <strong>Media → Elaborazione Bulk AI</strong> per testare il nuovo modello.</p>';
         echo '</div>';
     }
     
