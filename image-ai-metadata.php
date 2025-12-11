@@ -68,8 +68,12 @@ class Image_AI_Metadata {
         // Handle manual processing
         add_action('admin_post_image_ai_metadata_process', array($this, 'handle_manual_process'));
         
-        // Add admin styles
+        // Add admin styles and scripts
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_styles'));
+        
+        // AJAX handlers for bulk processing
+        add_action('wp_ajax_image_ai_get_images', array($this, 'ajax_get_images'));
+        add_action('wp_ajax_image_ai_process_image', array($this, 'ajax_process_image'));
     }
     
     /**
@@ -83,12 +87,22 @@ class Image_AI_Metadata {
      * Add admin menu
      */
     public function add_admin_menu() {
+        // Settings page
         add_options_page(
             __('Image AI Metadata Settings', 'image-ai-metadata'),
             __('Image AI Metadata', 'image-ai-metadata'),
             'manage_options',
             'image-ai-metadata',
             array($this, 'render_settings_page')
+        );
+        
+        // Bulk processing page under Media menu
+        add_media_page(
+            __('Elaborazione Bulk AI', 'image-ai-metadata'),
+            __('Elaborazione Bulk AI', 'image-ai-metadata'),
+            'upload_files',
+            'image-ai-bulk-process',
+            array($this, 'render_bulk_process_page')
         );
     }
     
@@ -504,12 +518,33 @@ class Image_AI_Metadata {
     }
     
     /**
-     * Enqueue admin styles
+     * Enqueue admin styles and scripts
      */
     public function enqueue_admin_styles($hook) {
         if ($hook === 'post.php' || $hook === 'upload.php') {
             // Add admin notice for success/error messages
             add_action('admin_notices', array($this, 'show_admin_notices'));
+        }
+        
+        // Enqueue scripts for bulk processing page
+        if ($hook === 'media_page_image-ai-bulk-process') {
+            wp_enqueue_style('image-ai-bulk-style', false);
+            wp_add_inline_style('image-ai-bulk-style', $this->get_bulk_page_css());
+            
+            wp_enqueue_script('image-ai-bulk-script', false, array('jquery'), IMAGE_AI_METADATA_VERSION, true);
+            wp_add_inline_script('image-ai-bulk-script', $this->get_bulk_page_js());
+            
+            wp_localize_script('image-ai-bulk-script', 'imageAIBulk', array(
+                'ajaxurl' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('image_ai_bulk_nonce'),
+                'strings' => array(
+                    'processing' => __('Elaborazione in corso...', 'image-ai-metadata'),
+                    'completed' => __('Completato', 'image-ai-metadata'),
+                    'failed' => __('Fallito', 'image-ai-metadata'),
+                    'success' => __('Successo', 'image-ai-metadata'),
+                    'error' => __('Errore', 'image-ai-metadata'),
+                )
+            ));
         }
     }
     
@@ -528,6 +563,521 @@ class Image_AI_Metadata {
             echo '<p>' . sprintf(__('Errore: %s', 'image-ai-metadata'), urldecode($_GET['image_ai_error'])) . '</p>';
             echo '</div>';
         }
+    }
+    
+    /**
+     * Render bulk processing page
+     */
+    public function render_bulk_process_page() {
+        if (!current_user_can('upload_files')) {
+            wp_die(__('Non hai i permessi per accedere a questa pagina.', 'image-ai-metadata'));
+        }
+        
+        $api_token = get_option('image_ai_metadata_api_token');
+        ?>
+        <div class="wrap">
+            <h1><?php _e('Elaborazione Bulk AI - Immagini', 'image-ai-metadata'); ?></h1>
+            
+            <?php if (empty($api_token)): ?>
+                <div class="notice notice-error">
+                    <p>
+                        <strong><?php _e('Token API non configurato!', 'image-ai-metadata'); ?></strong><br>
+                        <?php printf(
+                            __('Vai su <a href="%s">Impostazioni → Image AI Metadata</a> per configurare il token API.', 'image-ai-metadata'),
+                            admin_url('options-general.php?page=image-ai-metadata')
+                        ); ?>
+                    </p>
+                </div>
+            <?php else: ?>
+                
+                <div class="bulk-controls">
+                    <h2><?php _e('Seleziona Immagini da Elaborare', 'image-ai-metadata'); ?></h2>
+                    
+                    <div class="filter-options">
+                        <label>
+                            <input type="radio" name="filter_type" value="all" checked>
+                            <strong><?php _e('Tutte le immagini', 'image-ai-metadata'); ?></strong>
+                            <span class="description"><?php _e('Elabora tutte le immagini nella libreria media', 'image-ai-metadata'); ?></span>
+                        </label>
+                        <br><br>
+                        <label>
+                            <input type="radio" name="filter_type" value="unprocessed">
+                            <strong><?php _e('Solo immagini non processate', 'image-ai-metadata'); ?></strong>
+                            <span class="description"><?php _e('Elabora solo le immagini mai processate dall\'AI', 'image-ai-metadata'); ?></span>
+                        </label>
+                    </div>
+                    
+                    <p>
+                        <button id="btn-scan-images" class="button button-primary button-large">
+                            <span class="dashicons dashicons-search"></span>
+                            <?php _e('Scansiona Immagini', 'image-ai-metadata'); ?>
+                        </button>
+                    </p>
+                </div>
+                
+                <div id="images-found" style="display:none;">
+                    <h3><?php _e('Immagini Trovate', 'image-ai-metadata'); ?>: <span id="images-count">0</span></h3>
+                    <p>
+                        <button id="btn-start-processing" class="button button-primary button-large">
+                            <span class="dashicons dashicons-update"></span>
+                            <?php _e('Inizia Elaborazione', 'image-ai-metadata'); ?>
+                        </button>
+                        <button id="btn-stop-processing" class="button button-secondary" style="display:none;">
+                            <span class="dashicons dashicons-no"></span>
+                            <?php _e('Ferma Elaborazione', 'image-ai-metadata'); ?>
+                        </button>
+                    </p>
+                    
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progress-text"><?php _e('Pronto per iniziare', 'image-ai-metadata'); ?></span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="debug-log">
+                    <h3>
+                        <span class="dashicons dashicons-admin-tools"></span>
+                        <?php _e('Log di Debug', 'image-ai-metadata'); ?>
+                    </h3>
+                    <div id="debug-output"></div>
+                    <p>
+                        <button id="btn-clear-log" class="button button-small">
+                            <?php _e('Pulisci Log', 'image-ai-metadata'); ?>
+                        </button>
+                        <button id="btn-copy-log" class="button button-small">
+                            <?php _e('Copia Log', 'image-ai-metadata'); ?>
+                        </button>
+                    </p>
+                </div>
+                
+                <div id="results-summary" style="display:none;">
+                    <h3><?php _e('Riepilogo Elaborazione', 'image-ai-metadata'); ?></h3>
+                    <div class="results-grid">
+                        <div class="result-box result-success">
+                            <div class="result-number" id="count-success">0</div>
+                            <div class="result-label"><?php _e('Successo', 'image-ai-metadata'); ?></div>
+                        </div>
+                        <div class="result-box result-failed">
+                            <div class="result-number" id="count-failed">0</div>
+                            <div class="result-label"><?php _e('Falliti', 'image-ai-metadata'); ?></div>
+                        </div>
+                        <div class="result-box result-total">
+                            <div class="result-number" id="count-total">0</div>
+                            <div class="result-label"><?php _e('Totale', 'image-ai-metadata'); ?></div>
+                        </div>
+                    </div>
+                </div>
+                
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+    
+    /**
+     * AJAX: Get images to process
+     */
+    public function ajax_get_images() {
+        check_ajax_referer('image_ai_bulk_nonce', 'nonce');
+        
+        if (!current_user_can('upload_files')) {
+            wp_send_json_error(array('message' => __('Permessi insufficienti', 'image-ai-metadata')));
+        }
+        
+        $filter_type = isset($_POST['filter_type']) ? sanitize_text_field($_POST['filter_type']) : 'all';
+        
+        $args = array(
+            'post_type' => 'attachment',
+            'post_mime_type' => 'image',
+            'post_status' => 'inherit',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        );
+        
+        if ($filter_type === 'unprocessed') {
+            $args['meta_query'] = array(
+                'relation' => 'OR',
+                array(
+                    'key' => '_image_ai_metadata_processed',
+                    'compare' => 'NOT EXISTS',
+                ),
+                array(
+                    'key' => '_image_ai_metadata_processed',
+                    'value' => '',
+                    'compare' => '=',
+                ),
+            );
+        }
+        
+        $images = get_posts($args);
+        
+        wp_send_json_success(array(
+            'count' => count($images),
+            'images' => $images,
+        ));
+    }
+    
+    /**
+     * AJAX: Process single image
+     */
+    public function ajax_process_image() {
+        check_ajax_referer('image_ai_bulk_nonce', 'nonce');
+        
+        if (!current_user_can('upload_files')) {
+            wp_send_json_error(array('message' => __('Permessi insufficienti', 'image-ai-metadata')));
+        }
+        
+        $attachment_id = isset($_POST['attachment_id']) ? intval($_POST['attachment_id']) : 0;
+        
+        if (!$attachment_id || !wp_attachment_is_image($attachment_id)) {
+            wp_send_json_error(array(
+                'message' => __('ID immagine non valido', 'image-ai-metadata'),
+                'attachment_id' => $attachment_id,
+            ));
+        }
+        
+        // Get image info for debug
+        $image_file = get_attached_file($attachment_id);
+        $image_url = wp_get_attachment_url($attachment_id);
+        $image_title = get_the_title($attachment_id);
+        
+        // Process the image
+        $result = $this->analyze_and_update_image($attachment_id);
+        
+        if (is_wp_error($result)) {
+            wp_send_json_error(array(
+                'message' => $result->get_error_message(),
+                'attachment_id' => $attachment_id,
+                'image_title' => $image_title,
+                'image_url' => $image_url,
+                'image_file' => basename($image_file),
+            ));
+        }
+        
+        // Get updated metadata to show in response
+        $alt_text = get_post_meta($attachment_id, '_wp_attachment_image_alt', true);
+        
+        wp_send_json_success(array(
+            'message' => __('Elaborato con successo', 'image-ai-metadata'),
+            'attachment_id' => $attachment_id,
+            'image_title' => get_the_title($attachment_id),
+            'image_url' => $image_url,
+            'image_file' => basename($image_file),
+            'alt_text' => $alt_text,
+        ));
+    }
+    
+    /**
+     * Get CSS for bulk processing page
+     */
+    private function get_bulk_page_css() {
+        return "
+            .bulk-controls {
+                background: #fff;
+                border: 1px solid #ccd0d4;
+                padding: 20px;
+                margin: 20px 0;
+                box-shadow: 0 1px 1px rgba(0,0,0,.04);
+            }
+            .filter-options label {
+                display: block;
+                padding: 10px;
+                background: #f8f9fa;
+                border-left: 3px solid #2271b1;
+                margin: 5px 0;
+            }
+            .filter-options label:hover {
+                background: #f0f0f1;
+            }
+            .filter-options .description {
+                display: block;
+                font-size: 13px;
+                color: #646970;
+                margin-top: 5px;
+            }
+            .progress-bar-container {
+                background: #fff;
+                border: 1px solid #ccd0d4;
+                padding: 20px;
+                margin: 20px 0;
+            }
+            .progress-bar {
+                width: 100%;
+                height: 30px;
+                background: #f0f0f1;
+                border-radius: 3px;
+                overflow: hidden;
+                margin-bottom: 10px;
+            }
+            .progress-bar-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #2271b1 0%, #135e96 100%);
+                width: 0%;
+                transition: width 0.3s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: bold;
+            }
+            .progress-text {
+                display: flex;
+                justify-content: space-between;
+                font-size: 14px;
+            }
+            #debug-log {
+                background: #1e1e1e;
+                color: #d4d4d4;
+                padding: 20px;
+                margin: 20px 0;
+                border-radius: 3px;
+                font-family: 'Courier New', monospace;
+            }
+            #debug-log h3 {
+                color: #fff;
+                margin-top: 0;
+            }
+            #debug-output {
+                background: #000;
+                padding: 15px;
+                border-radius: 3px;
+                max-height: 400px;
+                overflow-y: auto;
+                font-size: 13px;
+                line-height: 1.6;
+            }
+            .log-entry {
+                margin: 5px 0;
+                padding: 5px;
+                border-left: 3px solid #646970;
+            }
+            .log-entry.log-info {
+                border-left-color: #2271b1;
+                color: #4cc9f0;
+            }
+            .log-entry.log-success {
+                border-left-color: #00a32a;
+                color: #7ed321;
+            }
+            .log-entry.log-error {
+                border-left-color: #d63638;
+                color: #ff6b6b;
+            }
+            .log-entry.log-warning {
+                border-left-color: #dba617;
+                color: #f5c842;
+            }
+            .log-timestamp {
+                color: #858585;
+                font-size: 11px;
+                margin-right: 10px;
+            }
+            .results-grid {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 20px;
+                margin-top: 20px;
+            }
+            .result-box {
+                background: #fff;
+                border: 1px solid #ccd0d4;
+                padding: 20px;
+                text-align: center;
+                border-radius: 3px;
+            }
+            .result-box.result-success {
+                border-left: 4px solid #00a32a;
+            }
+            .result-box.result-failed {
+                border-left: 4px solid #d63638;
+            }
+            .result-box.result-total {
+                border-left: 4px solid #2271b1;
+            }
+            .result-number {
+                font-size: 48px;
+                font-weight: bold;
+                margin-bottom: 10px;
+            }
+            .result-success .result-number {
+                color: #00a32a;
+            }
+            .result-failed .result-number {
+                color: #d63638;
+            }
+            .result-total .result-number {
+                color: #2271b1;
+            }
+            .result-label {
+                font-size: 14px;
+                color: #646970;
+                text-transform: uppercase;
+            }
+            .button .dashicons {
+                line-height: 28px;
+            }
+            #images-found {
+                background: #fff;
+                border: 1px solid #ccd0d4;
+                padding: 20px;
+                margin: 20px 0;
+            }
+        ";
+    }
+    
+    /**
+     * Get JavaScript for bulk processing page
+     */
+    private function get_bulk_page_js() {
+        return "
+            jQuery(document).ready(function($) {
+                var imagesToProcess = [];
+                var currentIndex = 0;
+                var successCount = 0;
+                var failedCount = 0;
+                var isProcessing = false;
+                
+                function addLog(message, type) {
+                    type = type || 'info';
+                    var timestamp = new Date().toLocaleTimeString();
+                    var logEntry = $('<div class=\"log-entry log-' + type + '\"></div>')
+                        .html('<span class=\"log-timestamp\">[' + timestamp + ']</span>' + message);
+                    $('#debug-output').append(logEntry);
+                    $('#debug-output').scrollTop($('#debug-output')[0].scrollHeight);
+                }
+                
+                $('#btn-scan-images').on('click', function() {
+                    var filterType = $('input[name=\"filter_type\"]:checked').val();
+                    $(this).prop('disabled', true).html('<span class=\"dashicons dashicons-update spin\"></span> Scansione...');
+                    
+                    addLog('Inizio scansione immagini (filtro: ' + filterType + ')...', 'info');
+                    
+                    $.post(imageAIBulk.ajaxurl, {
+                        action: 'image_ai_get_images',
+                        nonce: imageAIBulk.nonce,
+                        filter_type: filterType
+                    }, function(response) {
+                        if (response.success) {
+                            imagesToProcess = response.data.images;
+                            $('#images-count').text(response.data.count);
+                            $('#images-found').fadeIn();
+                            $('#count-total').text(response.data.count);
+                            addLog('Trovate ' + response.data.count + ' immagini da elaborare.', 'success');
+                        } else {
+                            addLog('Errore durante la scansione: ' + response.data.message, 'error');
+                        }
+                        $('#btn-scan-images').prop('disabled', false).html('<span class=\"dashicons dashicons-search\"></span> Scansiona Immagini');
+                    });
+                });
+                
+                $('#btn-start-processing').on('click', function() {
+                    if (imagesToProcess.length === 0) {
+                        addLog('Nessuna immagine da elaborare!', 'warning');
+                        return;
+                    }
+                    
+                    isProcessing = true;
+                    currentIndex = 0;
+                    successCount = 0;
+                    failedCount = 0;
+                    
+                    $(this).hide();
+                    $('#btn-stop-processing').show();
+                    $('#results-summary').fadeIn();
+                    
+                    addLog('=================================', 'info');
+                    addLog('INIZIO ELABORAZIONE BULK', 'info');
+                    addLog('Totale immagini: ' + imagesToProcess.length, 'info');
+                    addLog('=================================', 'info');
+                    
+                    processNextImage();
+                });
+                
+                $('#btn-stop-processing').on('click', function() {
+                    isProcessing = false;
+                    $(this).hide();
+                    $('#btn-start-processing').show();
+                    addLog('Elaborazione fermata dall\'utente.', 'warning');
+                });
+                
+                function processNextImage() {
+                    if (!isProcessing || currentIndex >= imagesToProcess.length) {
+                        completeProcessing();
+                        return;
+                    }
+                    
+                    var attachmentId = imagesToProcess[currentIndex];
+                    var progress = Math.round((currentIndex / imagesToProcess.length) * 100);
+                    
+                    $('#progress-bar-fill').css('width', progress + '%');
+                    $('#progress-percent').text(progress + '%');
+                    $('#progress-text').text('Elaborazione immagine ' + (currentIndex + 1) + ' di ' + imagesToProcess.length);
+                    
+                    addLog('Elaborazione immagine ID: ' + attachmentId + '...', 'info');
+                    
+                    $.post(imageAIBulk.ajaxurl, {
+                        action: 'image_ai_process_image',
+                        nonce: imageAIBulk.nonce,
+                        attachment_id: attachmentId
+                    }, function(response) {
+                        if (response.success) {
+                            successCount++;
+                            $('#count-success').text(successCount);
+                            addLog('✓ SUCCESS - ' + response.data.image_file + ' - Alt text: \"' + response.data.alt_text + '\"', 'success');
+                        } else {
+                            failedCount++;
+                            $('#count-failed').text(failedCount);
+                            addLog('✗ ERROR - ' + (response.data.image_file || 'Unknown') + ' - ' + response.data.message, 'error');
+                        }
+                        
+                        currentIndex++;
+                        setTimeout(processNextImage, 500);
+                    }).fail(function(xhr, status, error) {
+                        failedCount++;
+                        $('#count-failed').text(failedCount);
+                        addLog('✗ AJAX ERROR - Image ID ' + attachmentId + ' - ' + error, 'error');
+                        currentIndex++;
+                        setTimeout(processNextImage, 500);
+                    });
+                }
+                
+                function completeProcessing() {
+                    isProcessing = false;
+                    $('#btn-stop-processing').hide();
+                    $('#btn-start-processing').show();
+                    $('#progress-bar-fill').css('width', '100%');
+                    $('#progress-percent').text('100%');
+                    $('#progress-text').text('Elaborazione completata!');
+                    
+                    addLog('=================================', 'info');
+                    addLog('ELABORAZIONE COMPLETATA', 'success');
+                    addLog('Successo: ' + successCount, 'success');
+                    addLog('Falliti: ' + failedCount, 'error');
+                    addLog('Totale: ' + imagesToProcess.length, 'info');
+                    addLog('=================================', 'info');
+                }
+                
+                $('#btn-clear-log').on('click', function() {
+                    $('#debug-output').empty();
+                    addLog('Log pulito.', 'info');
+                });
+                
+                $('#btn-copy-log').on('click', function() {
+                    var logText = $('#debug-output').text();
+                    navigator.clipboard.writeText(logText).then(function() {
+                        addLog('Log copiato negli appunti!', 'success');
+                    });
+                });
+                
+                // Add spin animation for loading icons
+                var style = $('<style>.dashicons.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }</style>');
+                $('head').append(style);
+            });
+        ";
     }
 }
 
