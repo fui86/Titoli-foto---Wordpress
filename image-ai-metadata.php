@@ -528,12 +528,19 @@ class Image_AI_Metadata {
         
         // Enqueue scripts for bulk processing page
         if ($hook === 'media_page_image-ai-bulk-process') {
-            wp_enqueue_style('image-ai-bulk-style', false);
+            // Enqueue jQuery explicitly
+            wp_enqueue_script('jquery');
+            
+            // Register and enqueue custom style
+            wp_register_style('image-ai-bulk-style', false);
+            wp_enqueue_style('image-ai-bulk-style');
             wp_add_inline_style('image-ai-bulk-style', $this->get_bulk_page_css());
             
-            wp_enqueue_script('image-ai-bulk-script', false, array('jquery'), IMAGE_AI_METADATA_VERSION, true);
-            wp_add_inline_script('image-ai-bulk-script', $this->get_bulk_page_js());
+            // Register and enqueue custom script
+            wp_register_script('image-ai-bulk-script', false, array('jquery'), IMAGE_AI_METADATA_VERSION, true);
+            wp_enqueue_script('image-ai-bulk-script');
             
+            // Localize script data BEFORE adding inline script
             wp_localize_script('image-ai-bulk-script', 'imageAIBulk', array(
                 'ajaxurl' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('image_ai_bulk_nonce'),
@@ -545,6 +552,9 @@ class Image_AI_Metadata {
                     'error' => __('Errore', 'image-ai-metadata'),
                 )
             ));
+            
+            // Add inline script
+            wp_add_inline_script('image-ai-bulk-script', $this->get_bulk_page_js());
         }
     }
     
@@ -575,13 +585,21 @@ class Image_AI_Metadata {
         
         $api_token = get_option('image_ai_metadata_api_token');
         ?>
-        <div class="wrap">
-            <h1><?php _e('Elaborazione Bulk AI - Immagini', 'image-ai-metadata'); ?></h1>
+        <div class="wrap image-ai-bulk-wrap">
+            <div class="page-header">
+                <h1>
+                    <span class="dashicons dashicons-images-alt2"></span>
+                    <?php _e('Elaborazione Bulk AI - Immagini', 'image-ai-metadata'); ?>
+                </h1>
+                <p class="description">
+                    <?php _e('Elabora automaticamente tutte le immagini della tua libreria media con intelligenza artificiale', 'image-ai-metadata'); ?>
+                </p>
+            </div>
             
             <?php if (empty($api_token)): ?>
-                <div class="notice notice-error">
+                <div class="notice notice-error is-dismissible">
                     <p>
-                        <strong><?php _e('Token API non configurato!', 'image-ai-metadata'); ?></strong><br>
+                        <strong><?php _e('⚠️ Token API non configurato!', 'image-ai-metadata'); ?></strong><br>
                         <?php printf(
                             __('Vai su <a href="%s">Impostazioni → Image AI Metadata</a> per configurare il token API.', 'image-ai-metadata'),
                             admin_url('options-general.php?page=image-ai-metadata')
@@ -590,7 +608,34 @@ class Image_AI_Metadata {
                 </div>
             <?php else: ?>
                 
-                <div class="bulk-controls">
+                <!-- System Diagnostic Panel -->
+                <div class="diagnostic-panel">
+                    <h3>
+                        <span class="dashicons dashicons-admin-generic"></span>
+                        <?php _e('Stato Sistema', 'image-ai-metadata'); ?>
+                    </h3>
+                    <div class="diagnostic-grid">
+                        <div class="diagnostic-item">
+                            <span class="dashicons dashicons-yes-alt status-ok"></span>
+                            <strong><?php _e('Token API:', 'image-ai-metadata'); ?></strong> 
+                            <?php _e('Configurato', 'image-ai-metadata'); ?>
+                        </div>
+                        <div class="diagnostic-item">
+                            <span class="dashicons dashicons-yes-alt status-ok"></span>
+                            <strong>jQuery:</strong> <span id="jquery-status"><?php _e('Controllo...', 'image-ai-metadata'); ?></span>
+                        </div>
+                        <div class="diagnostic-item">
+                            <span class="dashicons dashicons-yes-alt status-ok"></span>
+                            <strong>AJAX URL:</strong> <span id="ajax-url-status"><?php _e('Controllo...', 'image-ai-metadata'); ?></span>
+                        </div>
+                        <div class="diagnostic-item">
+                            <span class="dashicons dashicons-yes-alt status-ok"></span>
+                            <strong>Nonce:</strong> <span id="nonce-status"><?php _e('Controllo...', 'image-ai-metadata'); ?></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bulk-controls card">
                     <h2><?php _e('Seleziona Immagini da Elaborare', 'image-ai-metadata'); ?></h2>
                     
                     <div class="filter-options">
@@ -776,32 +821,125 @@ class Image_AI_Metadata {
      */
     private function get_bulk_page_css() {
         return "
-            .bulk-controls {
+            .image-ai-bulk-wrap {
+                max-width: 1400px;
+            }
+            .page-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 30px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+            .page-header h1 {
+                color: white;
+                margin: 0 0 10px 0;
+                font-size: 28px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .page-header .dashicons {
+                font-size: 32px;
+                width: 32px;
+                height: 32px;
+            }
+            .page-header .description {
+                color: rgba(255,255,255,0.9);
+                font-size: 15px;
+                margin: 0;
+            }
+            .diagnostic-panel {
                 background: #fff;
-                border: 1px solid #ccd0d4;
+                border: 1px solid #c3c4c7;
+                border-radius: 8px;
                 padding: 20px;
+                margin-bottom: 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .diagnostic-panel h3 {
+                margin-top: 0;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color: #1d2327;
+            }
+            .diagnostic-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 15px;
+                margin-top: 15px;
+            }
+            .diagnostic-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 12px;
+                background: #f6f7f7;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            .diagnostic-item .status-ok {
+                color: #00a32a;
+            }
+            .diagnostic-item .status-error {
+                color: #d63638;
+            }
+            .diagnostic-item .status-warning {
+                color: #dba617;
+            }
+            .card {
+                background: #fff;
+                border: 1px solid #c3c4c7;
+                border-radius: 8px;
+                padding: 25px;
+                margin-bottom: 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .bulk-controls h2 {
+                margin-top: 0;
+                color: #1d2327;
+                font-size: 20px;
+            }
+            .filter-options {
                 margin: 20px 0;
-                box-shadow: 0 1px 1px rgba(0,0,0,.04);
             }
             .filter-options label {
-                display: block;
-                padding: 10px;
-                background: #f8f9fa;
-                border-left: 3px solid #2271b1;
-                margin: 5px 0;
+                display: flex;
+                align-items: flex-start;
+                gap: 12px;
+                padding: 16px;
+                background: #f6f7f7;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                margin: 12px 0;
+                cursor: pointer;
+                transition: all 0.2s ease;
             }
             .filter-options label:hover {
-                background: #f0f0f1;
+                background: #fff;
+                border-color: #2271b1;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            }
+            .filter-options input[type='radio'] {
+                margin-top: 4px;
+            }
+            .filter-options label > div {
+                flex: 1;
             }
             .filter-options .description {
                 display: block;
                 font-size: 13px;
                 color: #646970;
                 margin-top: 5px;
+                font-weight: normal;
             }
             .progress-bar-container {
                 background: #fff;
-                border: 1px solid #ccd0d4;
+                border: 1px solid #c3c4c7;
+                border-radius: 8px;
                 padding: 20px;
                 margin: 20px 0;
             }
@@ -934,16 +1072,39 @@ class Image_AI_Metadata {
      */
     private function get_bulk_page_js() {
         return "
-            jQuery(document).ready(function($) {
-                console.log('Image AI Bulk Processing: Script loaded');
-                console.log('AJAX URL:', imageAIBulk.ajaxurl);
-                console.log('Nonce:', imageAIBulk.nonce);
+            (function($) {
+                'use strict';
+                
+                console.log('=== IMAGE AI BULK PROCESSING DEBUG ===');
+                console.log('1. Script caricato correttamente');
+                console.log('2. jQuery version:', $.fn.jquery);
+                console.log('3. imageAIBulk object:', imageAIBulk);
+                console.log('4. AJAX URL:', imageAIBulk ? imageAIBulk.ajaxurl : 'UNDEFINED!');
+                console.log('5. Nonce:', imageAIBulk ? imageAIBulk.nonce : 'UNDEFINED!');
+                
+                // Check if imageAIBulk is defined
+                if (typeof imageAIBulk === 'undefined') {
+                    console.error('ERRORE CRITICO: imageAIBulk non è definito!');
+                    alert('ERRORE: Configurazione JavaScript non caricata correttamente. Ricarica la pagina.');
+                    return;
+                }
                 
                 var imagesToProcess = [];
                 var currentIndex = 0;
                 var successCount = 0;
                 var failedCount = 0;
                 var isProcessing = false;
+                
+                // Update diagnostic panel
+                function updateDiagnostics() {
+                    $('#jquery-status').text('v' + $.fn.jquery + ' ✓').parent().find('.dashicons').removeClass('status-warning').addClass('status-ok');
+                    $('#ajax-url-status').text(imageAIBulk.ajaxurl).parent().find('.dashicons').removeClass('status-warning').addClass('status-ok');
+                    $('#nonce-status').text('Valido (' + imageAIBulk.nonce.substring(0, 10) + '...)').parent().find('.dashicons').removeClass('status-warning').addClass('status-ok');
+                    addLog('✓ Sistema inizializzato correttamente', 'success');
+                    addLog('→ jQuery: ' + $.fn.jquery, 'info');
+                    addLog('→ AJAX URL: ' + imageAIBulk.ajaxurl, 'info');
+                    addLog('→ Nonce: ' + imageAIBulk.nonce.substring(0, 20) + '...', 'info');
+                }
                 
                 function addLog(message, type) {
                     type = type || 'info';
@@ -955,15 +1116,34 @@ class Image_AI_Metadata {
                     console.log('[' + type.toUpperCase() + '] ' + message);
                 }
                 
-                // Add initial log message
-                addLog('Sistema di debug inizializzato. Pronto per elaborare le immagini.', 'info');
+                // Initialize diagnostics on page load
+                $(document).ready(function() {
+                    console.log('6. DOM ready, inizializzazione diagnostics...');
+                    updateDiagnostics();
+                    addLog('='.repeat(50), 'info');
+                    addLog('PRONTO PER L\'ELABORAZIONE', 'success');
+                    addLog('='.repeat(50), 'info');
+                });
                 
                 $('#btn-scan-images').on('click', function() {
+                    console.log('7. Click su btn-scan-images rilevato');
+                    addLog('='.repeat(50), 'info');
+                    addLog('PASSO 1: Click sul pulsante Scansiona rilevato', 'info');
+                    addLog('='.repeat(50), 'info');
                     var filterType = $('input[name=\"filter_type\"]:checked').val();
-                    $(this).prop('disabled', true).html('<span class=\"dashicons dashicons-update spin\"></span> Scansione...');
+                    addLog('PASSO 2: Filtro selezionato: ' + filterType, 'info');
                     
-                    addLog('Inizio scansione immagini (filtro: ' + filterType + ')...', 'info');
-                    addLog('Chiamata AJAX a: ' + imageAIBulk.ajaxurl, 'info');
+                    $(this).prop('disabled', true).html('<span class=\"dashicons dashicons-update spin\"></span> Scansione...');
+                    addLog('PASSO 3: Pulsante disabilitato, inizio chiamata AJAX...', 'info');
+                    
+                    addLog('PASSO 4: Preparazione dati per la richiesta', 'info');
+                    addLog('  → URL: ' + imageAIBulk.ajaxurl, 'info');
+                    addLog('  → Action: image_ai_get_images', 'info');
+                    addLog('  → Nonce: ' + imageAIBulk.nonce.substring(0, 10) + '...', 'info');
+                    addLog('  → Filter: ' + filterType, 'info');
+                    
+                    addLog('PASSO 5: Invio richiesta AJAX al server...', 'info');
+                    var ajaxStartTime = Date.now();
                     
                     $.ajax({
                         url: imageAIBulk.ajaxurl,
@@ -973,25 +1153,73 @@ class Image_AI_Metadata {
                             nonce: imageAIBulk.nonce,
                             filter_type: filterType
                         },
+                        beforeSend: function() {
+                            console.log('8. beforeSend: richiesta in partenza');
+                            addLog('  → Richiesta in partenza...', 'info');
+                        },
                         success: function(response) {
-                            addLog('Risposta ricevuta dal server', 'info');
+                            var ajaxDuration = Date.now() - ajaxStartTime;
+                            console.log('9. success callback ricevuto, durata:', ajaxDuration + 'ms');
+                            addLog('PASSO 6: Risposta ricevuta dal server (' + ajaxDuration + 'ms)', 'success');
+                            addLog('  → Tipo risposta: ' + typeof response, 'info');
+                            addLog('  → Response.success: ' + response.success, 'info');
+                            
+                            console.log('Response completa:', response);
+                            
                             if (response.success) {
+                                addLog('PASSO 7: Risposta positiva dal server', 'success');
                                 imagesToProcess = response.data.images;
+                                addLog('  → Immagini trovate: ' + response.data.count, 'success');
+                                addLog('  → Array immagini caricato in memoria', 'info');
+                                
                                 $('#images-count').text(response.data.count);
                                 $('#images-found').fadeIn();
                                 $('#count-total').text(response.data.count);
-                                addLog('Trovate ' + response.data.count + ' immagini da elaborare.', 'success');
+                                
+                                addLog('PASSO 8: Interfaccia aggiornata con successo', 'success');
+                                addLog('='.repeat(50), 'success');
+                                addLog('✓ SCANSIONE COMPLETATA: ' + response.data.count + ' immagini pronte', 'success');
+                                addLog('='.repeat(50), 'success');
                             } else {
-                                addLog('Errore: ' + (response.data.message || 'Errore sconosciuto'), 'error');
+                                addLog('PASSO 7: Risposta negativa dal server', 'error');
+                                addLog('  → Messaggio: ' + (response.data.message || 'Errore sconosciuto'), 'error');
+                                console.error('Errore response:', response);
                             }
                         },
                         error: function(xhr, status, error) {
-                            addLog('ERRORE AJAX: ' + status + ' - ' + error, 'error');
-                            addLog('Status Code: ' + xhr.status, 'error');
-                            addLog('Response Text: ' + xhr.responseText.substring(0, 200), 'error');
+                            var ajaxDuration = Date.now() - ajaxStartTime;
+                            console.error('10. error callback, durata:', ajaxDuration + 'ms');
+                            console.error('xhr:', xhr);
+                            console.error('status:', status);
+                            console.error('error:', error);
+                            
+                            addLog('='.repeat(50), 'error');
+                            addLog('✗ ERRORE AJAX CRITICO', 'error');
+                            addLog('='.repeat(50), 'error');
+                            addLog('PASSO 6: Errore durante la chiamata AJAX', 'error');
+                            addLog('  → Status: ' + status, 'error');
+                            addLog('  → Error: ' + error, 'error');
+                            addLog('  → HTTP Status Code: ' + xhr.status, 'error');
+                            addLog('  → Ready State: ' + xhr.readyState, 'error');
+                            
+                            if (xhr.status === 0) {
+                                addLog('  → Possibile causa: Richiesta bloccata o timeout', 'error');
+                            } else if (xhr.status === 403) {
+                                addLog('  → Possibile causa: Nonce non valido o permessi insufficienti', 'error');
+                            } else if (xhr.status === 500) {
+                                addLog('  → Possibile causa: Errore PHP sul server', 'error');
+                            }
+                            
+                            if (xhr.responseText) {
+                                addLog('  → Response Text (primi 300 caratteri):', 'error');
+                                addLog('    ' + xhr.responseText.substring(0, 300), 'error');
+                            }
                         },
-                        complete: function() {
+                        complete: function(xhr, status) {
+                            console.log('11. complete callback, status:', status);
+                            addLog('PASSO FINALE: Richiesta completata (status: ' + status + ')', 'info');
                             $('#btn-scan-images').prop('disabled', false).html('<span class=\"dashicons dashicons-search\"></span> Scansiona Immagini');
+                            addLog('  → Pulsante riabilitato', 'info');
                         }
                     });
                 });
@@ -1098,7 +1326,8 @@ class Image_AI_Metadata {
                 // Add spin animation for loading icons
                 var style = $('<style>.dashicons.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }</style>');
                 $('head').append(style);
-            });
+                
+            })(jQuery);
         ";
     }
 }
