@@ -271,7 +271,7 @@ class Image_AI_Metadata {
                     type: 'POST',
                     data: {
                         action: 'test_api_connection',
-                        nonce: '<?php echo wp_create_nonce('test_api_connection'); ?>',
+                        nonce: <?php echo wp_json_encode(wp_create_nonce('test_api_connection')); ?>,
                         endpoint: $('input[name="image_ai_metadata_api_endpoint"]').val(),
                         token: $('input[name="image_ai_metadata_api_token"]').val()
                     },
@@ -621,7 +621,6 @@ class Image_AI_Metadata {
             error_log('[Image AI Metadata] Endpoint from DB: ' . $endpoint);
             error_log('[Image AI Metadata] Image path: ' . $image_path);
             error_log('[Image AI Metadata] Token configured: ' . (empty($api_token) ? 'NO' : 'YES (length: ' . strlen($api_token) . ')'));
-            error_log('[Image AI Metadata] Token prefix: ' . substr($api_token, 0, 7) . '...');
             error_log('[Image AI Metadata] Request format: ' . $format);
         }
         
@@ -666,7 +665,7 @@ class Image_AI_Metadata {
             $last_error = $result;
             $response_code = $result->get_error_data('response_code');
             
-            // If we get HTTP 410 (Gone), try alternative models
+            // If we get HTTP 410 (Gone), try alternative models immediately
             if ($response_code === 410) {
                 if (defined('WP_DEBUG') && WP_DEBUG) {
                     error_log('[Image AI Metadata] HTTP 410 detected, trying alternative models...');
@@ -704,6 +703,8 @@ class Image_AI_Metadata {
             }
             
             // For other errors, break the format loop and handle error
+            // HTTP 503 (Service Unavailable) may work with different format, so continue trying
+            // Other errors (401, 403, 404, etc.) are endpoint/token issues that won't be fixed by format change
             if ($response_code !== 503) {
                 break;
             }
@@ -762,7 +763,9 @@ class Image_AI_Metadata {
             error_log('[Image AI Metadata] Sending POST request to: ' . $endpoint . ' (format: ' . $format . ')');
         }
         
-        // Prepare API request with timeout and retry
+        // Prepare API request with extended timeout
+        // Increased to 45 seconds because some models (especially larger ones like BLIP2)
+        // can take 30+ seconds to respond on first request (cold start)
         $start_time = microtime(true);
         $response = wp_remote_post($endpoint, array(
             'headers' => $headers,
@@ -1298,10 +1301,11 @@ class Image_AI_Metadata {
             ));
         }
         
-        // Create a minimal test image (1x1 pixel PNG)
+        // Create a minimal test image (1x1 pixel transparent PNG - 85 bytes)
+        // This is the smallest valid PNG that can be decoded by most image processing APIs
         $test_image_data = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
         
-        // Try binary format first
+        // Try binary format first (using same timeout as main API calls for consistency)
         $start_time = microtime(true);
         $response = wp_remote_post($endpoint, array(
             'headers' => array(
@@ -1309,7 +1313,7 @@ class Image_AI_Metadata {
                 'Content-Type' => 'application/octet-stream'
             ),
             'body' => $test_image_data,
-            'timeout' => 30
+            'timeout' => 45
         ));
         $elapsed_time = round((microtime(true) - $start_time) * 1000);
         
