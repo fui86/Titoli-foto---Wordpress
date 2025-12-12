@@ -77,9 +77,6 @@ class Image_AI_Metadata {
         
         // AJAX handler for API connection test
         add_action('wp_ajax_test_api_connection', array($this, 'ajax_test_api_connection'));
-        
-        // Register activation hook for cache clearing
-        register_activation_hook(__FILE__, array($this, 'on_plugin_activation'));
     }
     
     /**
@@ -541,15 +538,6 @@ class Image_AI_Metadata {
         }
         
         exit;
-    }
-    
-    /**
-     * Plugin activation hook
-     */
-    public function on_plugin_activation() {
-        // Force clear all caches
-        wp_cache_flush();
-        delete_transient('image_ai_metadata_api_endpoint');
     }
     
     /**
@@ -1878,4 +1866,12 @@ function image_ai_metadata_init() {
     return Image_AI_Metadata::get_instance();
 }
 
+// Activation hook for cache clearing
+function image_ai_metadata_activate() {
+    // Force clear all caches on activation
+    wp_cache_flush();
+    delete_transient('image_ai_metadata_api_endpoint');
+}
+
 add_action('plugins_loaded', 'image_ai_metadata_init');
+register_activation_hook(__FILE__, 'image_ai_metadata_activate');
