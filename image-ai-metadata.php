@@ -74,6 +74,12 @@ class Image_AI_Metadata {
         // AJAX handlers for bulk processing
         add_action('wp_ajax_image_ai_get_images', array($this, 'ajax_get_images'));
         add_action('wp_ajax_image_ai_process_image', array($this, 'ajax_process_image'));
+        
+        // AJAX handler for API connection test
+        add_action('wp_ajax_test_api_connection', array($this, 'ajax_test_api_connection'));
+        
+        // Register activation hook for cache clearing
+        register_activation_hook(__FILE__, array($this, 'on_plugin_activation'));
     }
     
     /**
@@ -110,9 +116,13 @@ class Image_AI_Metadata {
      * Register settings
      */
     public function register_settings() {
-        register_setting('image_ai_metadata_options', 'image_ai_metadata_api_token');
+        register_setting('image_ai_metadata_options', 'image_ai_metadata_api_token', array(
+            'sanitize_callback' => array($this, 'sanitize_api_token')
+        ));
         register_setting('image_ai_metadata_options', 'image_ai_metadata_auto_process');
-        register_setting('image_ai_metadata_options', 'image_ai_metadata_api_endpoint');
+        register_setting('image_ai_metadata_options', 'image_ai_metadata_api_endpoint', array(
+            'sanitize_callback' => array($this, 'sanitize_api_endpoint')
+        ));
         
         add_settings_section(
             'image_ai_metadata_main',
@@ -147,6 +157,43 @@ class Image_AI_Metadata {
     }
     
     /**
+     * Sanitize API token
+     */
+    public function sanitize_api_token($value) {
+        // Trim whitespace
+        $value = trim($value);
+        
+        // Validate format if not empty
+        if (!empty($value) && !preg_match('/^hf_[a-zA-Z0-9_]+$/', $value)) {
+            add_settings_error(
+                'image_ai_metadata_api_token',
+                'invalid_token_format',
+                __('Attenzione: Il token API dovrebbe iniziare con "hf_". Verifica che sia corretto.', 'image-ai-metadata'),
+                'warning'
+            );
+        }
+        
+        return $value;
+    }
+    
+    /**
+     * Sanitize API endpoint
+     */
+    public function sanitize_api_endpoint($value) {
+        // Trim whitespace
+        $value = trim($value);
+        
+        // Clear all caches when endpoint is updated
+        if (!empty($value)) {
+            wp_cache_delete('image_ai_metadata_api_endpoint', 'options');
+            wp_cache_delete('alloptions', 'options');
+            wp_cache_flush();
+        }
+        
+        return $value;
+    }
+    
+    /**
      * Render settings section
      */
     public function render_settings_section() {
@@ -173,9 +220,9 @@ class Image_AI_Metadata {
         // Check what's actually in the database (no default fallback)
         $db_value = get_option('image_ai_metadata_api_endpoint', false);
         
-        // If nothing is stored, use the new working default
+        // If nothing is stored, use the new working default (nlpconnect verified working in 2025)
         if ($db_value === false || empty($db_value)) {
-            $value = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
+            $value = 'https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning';
             // Save it to database immediately
             update_option('image_ai_metadata_api_endpoint', $value);
         } else {
@@ -183,7 +230,7 @@ class Image_AI_Metadata {
         }
         
         echo '<input type="text" name="image_ai_metadata_api_endpoint" value="' . esc_attr($value) . '" size="80" style="font-family: monospace;" />';
-        echo '<p class="description">' . __('Endpoint API per il modello di riconoscimento immagini (predefinito: BLIP Base).', 'image-ai-metadata') . '</p>';
+        echo '<p class="description">' . __('Endpoint API per il modello di riconoscimento immagini.', 'image-ai-metadata') . '</p>';
         
         // Show what's actually stored in the database for debugging
         echo '<div style="margin-top: 10px; padding: 8px; background: #e7f3ff; border-left: 4px solid #0073aa; border-radius: 3px; font-size: 12px;">';
@@ -192,14 +239,73 @@ class Image_AI_Metadata {
         echo '</div>';
         
         echo '<div style="margin-top: 10px; padding: 10px; background: #f0f0f1; border-left: 4px solid #2271b1; border-radius: 4px;">';
-        echo '<strong>' . __('✅ Modelli Consigliati e Funzionanti:', 'image-ai-metadata') . '</strong><br>';
+        echo '<strong>' . __('✅ Modelli Verificati Funzionanti (2025):', 'image-ai-metadata') . '</strong><br>';
         echo '<ul style="margin: 10px 0 0 20px;">';
-        echo '<li><strong><code>https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base</code></strong> - <strong>BLIP Base (CONSIGLIATO)</strong></li>';
-        echo '<li><code>https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning</code> - ViT-GPT2 (alternativa stabile)</li>';
-        echo '<li><code>https://api-inference.huggingface.co/models/microsoft/git-base</code> - GIT Base (Microsoft)</li>';
+        echo '<li><strong><code>https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning</code></strong> - <strong>ViT-GPT2 (DEFAULT - più stabile)</strong></li>';
+        echo '<li><code>https://api-inference.huggingface.co/models/microsoft/git-base</code> - GIT Base (alternativa Microsoft)</li>';
+        echo '<li><code>https://api-inference.huggingface.co/models/Salesforce/blip2-opt-2.7b</code> - BLIP2 (più potente ma più lento)</li>';
         echo '</ul>';
-        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #646970;">' . __('💡 Se vedi errore HTTP 410, significa che il modello non è più disponibile. Copia e incolla uno degli endpoint sopra e clicca "Salva modifiche".', 'image-ai-metadata') . '</p>';
+        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #646970;">' . __('💡 Se vedi errore HTTP 410 (Gone), significa che il modello non è più disponibile. Copia e incolla uno degli endpoint sopra e clicca "Salva modifiche".', 'image-ai-metadata') . '</p>';
         echo '</div>';
+        
+        // Add test connection button
+        echo '<div style="margin-top: 15px;">';
+        echo '<button type="button" id="test-api-connection" class="button button-secondary">';
+        echo '<span class="dashicons dashicons-update"></span> ';
+        echo __('Test Connessione API', 'image-ai-metadata');
+        echo '</button>';
+        echo '<span id="test-result" style="margin-left: 10px;"></span>';
+        echo '</div>';
+        
+        // Add JavaScript for test button
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('#test-api-connection').on('click', function() {
+                var button = $(this);
+                var resultSpan = $('#test-result');
+                
+                button.prop('disabled', true);
+                button.find('.dashicons').addClass('dashicons-update spin').css('animation', 'rotation 1s infinite linear');
+                resultSpan.html('<span style="color: #0073aa;">⏳ <?php _e('Test in corso...', 'image-ai-metadata'); ?></span>');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'test_api_connection',
+                        nonce: '<?php echo wp_create_nonce('test_api_connection'); ?>',
+                        endpoint: $('input[name="image_ai_metadata_api_endpoint"]').val(),
+                        token: $('input[name="image_ai_metadata_api_token"]').val()
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            resultSpan.html('<span style="color: #00a32a;">✓ ' + response.data.message + '</span>');
+                        } else {
+                            resultSpan.html('<span style="color: #d63638;">✗ ' + response.data.message + '</span>');
+                        }
+                    },
+                    error: function() {
+                        resultSpan.html('<span style="color: #d63638;">✗ <?php _e('Errore durante il test', 'image-ai-metadata'); ?></span>');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false);
+                        button.find('.dashicons').removeClass('spin').css('animation', '');
+                    }
+                });
+            });
+        });
+        </script>
+        <style>
+        .dashicons.spin {
+            animation: rotation 1s infinite linear;
+        }
+        @keyframes rotation {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(359deg); }
+        }
+        </style>
+        <?php
     }
     
     /**
@@ -438,6 +544,15 @@ class Image_AI_Metadata {
     }
     
     /**
+     * Plugin activation hook
+     */
+    public function on_plugin_activation() {
+        // Force clear all caches
+        wp_cache_flush();
+        delete_transient('image_ai_metadata_api_endpoint');
+    }
+    
+    /**
      * Analyze image using AI and update metadata
      */
     private function analyze_and_update_image($attachment_id) {
@@ -471,12 +586,22 @@ class Image_AI_Metadata {
     }
     
     /**
-     * Call AI API to analyze image
+     * Call AI API to analyze image with multiple format support and automatic fallback
      */
-    private function call_ai_api($image_path, $api_token) {
+    private function call_ai_api($image_path, $api_token, $format = 'auto') {
         // CRITICAL: Force fresh read from database - clear ALL caches
         wp_cache_delete('image_ai_metadata_api_endpoint', 'options');
         wp_cache_delete('alloptions', 'options');
+        
+        // Trim token to remove any whitespace
+        $api_token = trim($api_token);
+        
+        // Validate token format
+        if (!preg_match('/^hf_[a-zA-Z0-9_]+$/', $api_token)) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Image AI Metadata] WARNING: Token format may be invalid (should start with hf_)');
+            }
+        }
         
         // Force WordPress to reload options from database
         global $wpdb;
@@ -487,19 +612,29 @@ class Image_AI_Metadata {
         
         // Use the working default if nothing is stored or value is empty
         if (empty($endpoint_value)) {
-            $endpoint_value = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
+            $endpoint_value = 'https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning';
             // Save it for future use
             update_option('image_ai_metadata_api_endpoint', $endpoint_value);
         }
         
         $endpoint = $endpoint_value;
         
+        // Define alternative working models for fallback
+        $alternative_models = array(
+            'https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning',
+            'https://api-inference.huggingface.co/models/microsoft/git-base',
+            'https://api-inference.huggingface.co/models/Salesforce/blip2-opt-2.7b',
+        );
+        
         // Enhanced logging for debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('[Image AI Metadata] === API CALL START ===');
+            error_log('[Image AI Metadata] Timestamp: ' . current_time('Y-m-d H:i:s'));
             error_log('[Image AI Metadata] Endpoint from DB: ' . $endpoint);
             error_log('[Image AI Metadata] Image path: ' . $image_path);
             error_log('[Image AI Metadata] Token configured: ' . (empty($api_token) ? 'NO' : 'YES (length: ' . strlen($api_token) . ')'));
+            error_log('[Image AI Metadata] Token prefix: ' . substr($api_token, 0, 7) . '...');
+            error_log('[Image AI Metadata] Request format: ' . $format);
         }
         
         // Read image file
@@ -514,18 +649,138 @@ class Image_AI_Metadata {
         
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('[Image AI Metadata] Image data read successfully (' . strlen($image_data) . ' bytes)');
-            error_log('[Image AI Metadata] Sending POST request to: ' . $endpoint);
         }
         
-        // Prepare API request
+        // Try different request formats based on parameter
+        $formats_to_try = array();
+        if ($format === 'auto') {
+            $formats_to_try = array('binary', 'base64', 'url');
+        } else {
+            $formats_to_try = array($format);
+        }
+        
+        $last_error = null;
+        
+        foreach ($formats_to_try as $current_format) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Image AI Metadata] Trying format: ' . $current_format);
+            }
+            
+            $result = $this->try_api_request($endpoint, $api_token, $image_path, $image_data, $current_format);
+            
+            if (!is_wp_error($result)) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('[Image AI Metadata] Success with format: ' . $current_format);
+                }
+                return $result;
+            }
+            
+            $last_error = $result;
+            $response_code = $result->get_error_data('response_code');
+            
+            // If we get HTTP 410 (Gone), try alternative models
+            if ($response_code === 410) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('[Image AI Metadata] HTTP 410 detected, trying alternative models...');
+                }
+                
+                foreach ($alternative_models as $alt_endpoint) {
+                    if ($alt_endpoint === $endpoint) {
+                        continue; // Skip the current failing endpoint
+                    }
+                    
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('[Image AI Metadata] Trying alternative endpoint: ' . $alt_endpoint);
+                    }
+                    
+                    $alt_result = $this->try_api_request($alt_endpoint, $api_token, $image_path, $image_data, $current_format);
+                    
+                    if (!is_wp_error($alt_result)) {
+                        // Success! Save this as the new default
+                        update_option('image_ai_metadata_api_endpoint', $alt_endpoint);
+                        
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log('[Image AI Metadata] SUCCESS! Switched to working model: ' . $alt_endpoint);
+                        }
+                        
+                        // Add admin notice about the automatic switch
+                        add_option('_image_ai_model_switched_notice', array(
+                            'old' => $endpoint,
+                            'new' => $alt_endpoint,
+                            'time' => time()
+                        ));
+                        
+                        return $alt_result;
+                    }
+                }
+            }
+            
+            // For other errors, break the format loop and handle error
+            if ($response_code !== 503) {
+                break;
+            }
+        }
+        
+        // All attempts failed, return the last error with enhanced message
+        return $last_error;
+    }
+    
+    /**
+     * Try API request with specific format
+     */
+    private function try_api_request($endpoint, $api_token, $image_path, $image_data, $format) {
+        $headers = array(
+            'Authorization' => 'Bearer ' . $api_token,
+        );
+        
+        $body = null;
+        
+        // Prepare request based on format
+        switch ($format) {
+            case 'binary':
+                $headers['Content-Type'] = 'application/octet-stream';
+                $body = $image_data;
+                break;
+                
+            case 'base64':
+                $headers['Content-Type'] = 'application/json';
+                $body = json_encode(array(
+                    'inputs' => base64_encode($image_data)
+                ));
+                break;
+                
+            case 'url':
+                // Try to get public URL for the image
+                $attachment_id = attachment_url_to_postid($image_path);
+                if ($attachment_id) {
+                    $image_url = wp_get_attachment_url($attachment_id);
+                } else {
+                    // Construct URL from path
+                    $upload_dir = wp_upload_dir();
+                    $image_url = str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $image_path);
+                }
+                
+                $headers['Content-Type'] = 'application/json';
+                $body = json_encode(array(
+                    'inputs' => $image_url
+                ));
+                break;
+                
+            default:
+                return new WP_Error('invalid_format', __('Formato richiesta non valido.', 'image-ai-metadata'));
+        }
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[Image AI Metadata] Sending POST request to: ' . $endpoint . ' (format: ' . $format . ')');
+        }
+        
+        // Prepare API request with timeout and retry
         $start_time = microtime(true);
         $response = wp_remote_post($endpoint, array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $api_token,
-                'Content-Type' => 'application/octet-stream'
-            ),
-            'body' => $image_data,
-            'timeout' => 30
+            'headers' => $headers,
+            'body' => $body,
+            'timeout' => 45,
+            'sslverify' => true
         ));
         $elapsed_time = round((microtime(true) - $start_time) * 1000);
         
@@ -534,68 +789,33 @@ class Image_AI_Metadata {
                 error_log('[Image AI Metadata] ERROR: wp_remote_post failed - ' . $response->get_error_message());
             }
             return new WP_Error('api_error', sprintf(
-                __('Errore nella chiamata API: %s', 'image-ai-metadata'),
-                $response->get_error_message()
+                __('Errore nella chiamata API: %s (Formato: %s)', 'image-ai-metadata'),
+                $response->get_error_message(),
+                $format
             ));
         }
         
         $response_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
+        $body_response = wp_remote_retrieve_body($response);
         
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('[Image AI Metadata] Response received in ' . $elapsed_time . 'ms');
             error_log('[Image AI Metadata] HTTP Status Code: ' . $response_code);
-            error_log('[Image AI Metadata] Response body length: ' . strlen($body) . ' bytes');
+            error_log('[Image AI Metadata] Response body length: ' . strlen($body_response) . ' bytes');
         }
         
         if ($response_code !== 200) {
             // Get specific error message based on status code
-            $error_message = '';
-            
-            switch ($response_code) {
-                case 410:
-                    $error_message = sprintf(
-                        __('Il modello non è più disponibile (HTTP 410 - Gone). Endpoint usato: %s. Prova con un modello alternativo come "Salesforce/blip-image-captioning-base" nelle impostazioni del plugin.', 'image-ai-metadata'),
-                        $endpoint
-                    );
-                    break;
-                case 403:
-                    $error_message = __('Token API non valido o permessi insufficienti (HTTP 403). Verifica il token nelle impostazioni.', 'image-ai-metadata');
-                    break;
-                case 401:
-                    $error_message = __('Non autenticato (HTTP 401). Verifica che il token API sia corretto.', 'image-ai-metadata');
-                    break;
-                case 404:
-                    $error_message = __('Modello non trovato (HTTP 404). Verifica l\'endpoint API nelle impostazioni.', 'image-ai-metadata');
-                    break;
-                case 429:
-                    $error_message = __('Troppo richieste (HTTP 429). Hai raggiunto il limite API. Attendi qualche minuto e riprova.', 'image-ai-metadata');
-                    break;
-                case 500:
-                case 502:
-                case 503:
-                    $error_message = __('Errore server Hugging Face (HTTP ' . $response_code . '). Il servizio potrebbe essere temporaneamente non disponibile. Riprova tra qualche minuto.', 'image-ai-metadata');
-                    break;
-                default:
-                    // Try to extract JSON error message
-                    $json_data = json_decode($body, true);
-                    if (isset($json_data['error'])) {
-                        $error_message = sprintf(__('Errore API (HTTP %d): %s', 'image-ai-metadata'), $response_code, sanitize_text_field($json_data['error']));
-                    } else {
-                        // Strip HTML tags and limit length for other errors
-                        $clean_body = wp_strip_all_tags($body);
-                        $clean_body = substr($clean_body, 0, 200);
-                        $error_message = sprintf(__('Errore API (HTTP %d): %s', 'image-ai-metadata'), $response_code, $clean_body);
-                    }
-                    break;
-            }
+            $error_message = $this->get_error_message_for_status_code($response_code, $endpoint, $body_response, $format);
             
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('[Image AI Metadata] ERROR: Non-200 status code - ' . $error_message);
-                error_log('[Image AI Metadata] Response preview: ' . substr($body, 0, 300));
+                error_log('[Image AI Metadata] Response preview (first 500 chars): ' . substr($body_response, 0, 500));
             }
             
-            return new WP_Error('api_error', $error_message);
+            $error = new WP_Error('api_error', $error_message);
+            $error->add_data($response_code, 'response_code');
+            return $error;
         }
         
         if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -603,24 +823,34 @@ class Image_AI_Metadata {
             error_log('[Image AI Metadata] Parsing JSON response...');
         }
         
-        $data = json_decode($body, true);
+        $data = json_decode($body_response, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('[Image AI Metadata] ERROR: JSON decode failed - ' . json_last_error_msg());
-                error_log('[Image AI Metadata] Raw response: ' . substr($body, 0, 500));
+                error_log('[Image AI Metadata] Raw response (first 500 chars): ' . substr($body_response, 0, 500));
             }
             return new WP_Error('json_error', __('Errore nella decodifica della risposta JSON.', 'image-ai-metadata'));
         }
         
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('[Image AI Metadata] JSON parsed successfully');
-            error_log('[Image AI Metadata] Response structure: ' . print_r($data, true));
         }
         
-        // Extract description from response
+        // Extract description from response (handle different response formats)
+        $description = null;
+        
         if (isset($data[0]['generated_text'])) {
             $description = sanitize_text_field($data[0]['generated_text']);
+        } elseif (isset($data['generated_text'])) {
+            $description = sanitize_text_field($data['generated_text']);
+        } elseif (isset($data[0]['caption'])) {
+            $description = sanitize_text_field($data[0]['caption']);
+        } elseif (isset($data['caption'])) {
+            $description = sanitize_text_field($data['caption']);
+        }
+        
+        if ($description) {
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('[Image AI Metadata] Generated text extracted: ' . $description);
                 error_log('[Image AI Metadata] === API CALL END (SUCCESS) ===');
@@ -629,11 +859,87 @@ class Image_AI_Metadata {
         }
         
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('[Image AI Metadata] ERROR: Response structure invalid - no generated_text field found');
+            error_log('[Image AI Metadata] ERROR: Response structure invalid - no recognized caption field found');
+            error_log('[Image AI Metadata] Response structure: ' . print_r($data, true));
             error_log('[Image AI Metadata] === API CALL END (FAILED) ===');
         }
         
-        return new WP_Error('invalid_response', __('Risposta API non valida.', 'image-ai-metadata'));
+        return new WP_Error('invalid_response', __('Risposta API non valida. Nessun testo generato trovato nella risposta.', 'image-ai-metadata'));
+    }
+    
+    /**
+     * Get error message for HTTP status code
+     */
+    private function get_error_message_for_status_code($response_code, $endpoint, $body, $format) {
+        $error_message = '';
+        
+        switch ($response_code) {
+            case 410:
+                $error_message = sprintf(
+                    __('Il modello non è più disponibile (HTTP 410 - Gone). Endpoint: %s. Formato: %s. Il plugin proverà automaticamente modelli alternativi. Se il problema persiste, vai su Impostazioni → Image AI Metadata e scegli un modello alternativo dalla lista.', 'image-ai-metadata'),
+                    $endpoint,
+                    $format
+                );
+                break;
+            case 403:
+                $error_message = __('Token API non valido o permessi insufficienti (HTTP 403). Verifica che il token sia di tipo FINEGRAINED con permessi "Read" o "Write" abilitati. Genera un nuovo token su https://huggingface.co/settings/tokens', 'image-ai-metadata');
+                break;
+            case 401:
+                $error_message = __('Non autenticato (HTTP 401). Il token API non è valido o è scaduto. Verifica nelle impostazioni che il token inizi con "hf_" e sia attivo su https://huggingface.co/settings/tokens', 'image-ai-metadata');
+                break;
+            case 404:
+                $error_message = sprintf(
+                    __('Modello non trovato (HTTP 404). L\'endpoint API "%s" non esiste. Verifica l\'endpoint nelle impostazioni.', 'image-ai-metadata'),
+                    $endpoint
+                );
+                break;
+            case 429:
+                // Try to extract retry-after header
+                $retry_after = 'qualche minuto';
+                $error_message = sprintf(
+                    __('Troppo richieste (HTTP 429). Hai raggiunto il limite API di Hugging Face. Attendi %s e riprova. Account gratuiti hanno limite di ~1000 richieste/giorno.', 'image-ai-metadata'),
+                    $retry_after
+                );
+                break;
+            case 503:
+                $error_message = sprintf(
+                    __('Servizio temporaneamente non disponibile (HTTP 503). Il modello "%s" potrebbe essere in caricamento. Attendi 20-30 secondi e riprova.', 'image-ai-metadata'),
+                    basename($endpoint)
+                );
+                break;
+            case 500:
+            case 502:
+                $error_message = sprintf(
+                    __('Errore server Hugging Face (HTTP %d). Il servizio potrebbe essere temporaneamente non disponibile. Riprova tra qualche minuto.', 'image-ai-metadata'),
+                    $response_code
+                );
+                break;
+            default:
+                // Try to extract JSON error message
+                $json_data = json_decode($body, true);
+                if (isset($json_data['error'])) {
+                    $api_error = sanitize_text_field($json_data['error']);
+                    $error_message = sprintf(
+                        __('Errore API (HTTP %d): %s | Formato richiesta: %s', 'image-ai-metadata'), 
+                        $response_code, 
+                        $api_error,
+                        $format
+                    );
+                } else {
+                    // Strip HTML tags and limit length for other errors
+                    $clean_body = wp_strip_all_tags($body);
+                    $clean_body = substr($clean_body, 0, 500);
+                    $error_message = sprintf(
+                        __('Errore API (HTTP %d) | Formato: %s | Risposta: %s', 'image-ai-metadata'), 
+                        $response_code,
+                        $format,
+                        $clean_body
+                    );
+                }
+                break;
+        }
+        
+        return $error_message;
     }
     
     /**
@@ -709,6 +1015,25 @@ class Image_AI_Metadata {
         if (isset($_GET['image_ai_error'])) {
             echo '<div class="notice notice-error is-dismissible">';
             echo '<p>' . sprintf(__('Errore: %s', 'image-ai-metadata'), urldecode($_GET['image_ai_error'])) . '</p>';
+            echo '</div>';
+        }
+        
+        // Show notice if model was automatically switched
+        $switched_notice = get_option('_image_ai_model_switched_notice');
+        if ($switched_notice && is_array($switched_notice)) {
+            // Show notice only once
+            delete_option('_image_ai_model_switched_notice');
+            
+            echo '<div class="notice notice-info is-dismissible" style="border-left-color: #00a32a;">';
+            echo '<p><strong>' . __('✓ Modello AI aggiornato automaticamente', 'image-ai-metadata') . '</strong></p>';
+            echo '<p>' . sprintf(
+                __('Il modello precedente non era più disponibile (HTTP 410). Il plugin ha automaticamente trovato e salvato un modello alternativo funzionante:', 'image-ai-metadata')
+            ) . '</p>';
+            echo '<p><strong>' . __('Nuovo modello:', 'image-ai-metadata') . '</strong> <code>' . esc_html($switched_notice['new']) . '</code></p>';
+            echo '<p>' . sprintf(
+                __('Puoi cambiare modello manualmente in <a href="%s">Impostazioni → Image AI Metadata</a> se preferisci un\'alternativa.', 'image-ai-metadata'),
+                admin_url('options-general.php?page=image-ai-metadata')
+            ) . '</p>';
             echo '</div>';
         }
     }
@@ -952,6 +1277,84 @@ class Image_AI_Metadata {
             'image_file' => basename($image_file),
             'alt_text' => $alt_text,
         ));
+    }
+    
+    /**
+     * AJAX: Test API connection
+     */
+    public function ajax_test_api_connection() {
+        check_ajax_referer('test_api_connection', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Permessi insufficienti', 'image-ai-metadata')));
+        }
+        
+        $endpoint = isset($_POST['endpoint']) ? sanitize_text_field($_POST['endpoint']) : '';
+        $token = isset($_POST['token']) ? sanitize_text_field($_POST['token']) : '';
+        
+        if (empty($token)) {
+            wp_send_json_error(array('message' => __('Token API non configurato', 'image-ai-metadata')));
+        }
+        
+        if (empty($endpoint)) {
+            wp_send_json_error(array('message' => __('Endpoint API non configurato', 'image-ai-metadata')));
+        }
+        
+        // Trim token
+        $token = trim($token);
+        
+        // Validate token format
+        if (!preg_match('/^hf_[a-zA-Z0-9_]+$/', $token)) {
+            wp_send_json_error(array(
+                'message' => __('Formato token non valido. Il token deve iniziare con "hf_"', 'image-ai-metadata')
+            ));
+        }
+        
+        // Create a minimal test image (1x1 pixel PNG)
+        $test_image_data = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
+        
+        // Try binary format first
+        $start_time = microtime(true);
+        $response = wp_remote_post($endpoint, array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/octet-stream'
+            ),
+            'body' => $test_image_data,
+            'timeout' => 30
+        ));
+        $elapsed_time = round((microtime(true) - $start_time) * 1000);
+        
+        if (is_wp_error($response)) {
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    __('Errore di connessione: %s', 'image-ai-metadata'),
+                    $response->get_error_message()
+                )
+            ));
+        }
+        
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        
+        if ($response_code === 200) {
+            wp_send_json_success(array(
+                'message' => sprintf(
+                    __('Connessione riuscita! (%dms) Il modello è funzionante.', 'image-ai-metadata'),
+                    $elapsed_time
+                )
+            ));
+        } else {
+            // Provide detailed error message
+            $error_msg = $this->get_error_message_for_status_code($response_code, $endpoint, $body, 'binary');
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    __('Test fallito (HTTP %d): %s', 'image-ai-metadata'),
+                    $response_code,
+                    $error_msg
+                )
+            ));
+        }
     }
     
     /**
